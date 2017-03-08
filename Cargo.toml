@@ -1,0 +1,21 @@
+[package]
+name = "raft"
+version = "0.1.0"
+authors = ["Nicholas Dujay <nickdujay@gmail.com>"]
+
+[lib]
+name = "raft"
+path = "src/lib.rs"
+
+[[bin]]
+name = "raftd"
+path = "src/main.rs"
+
+[dependencies]
+serde = "^0.9"
+error-chain = "^0.7"
+futures = "^0.1"
+tokio-core = "^0.1"
+log = "^0.3"
+env_logger = "^0.4"
+clap = "^2"
