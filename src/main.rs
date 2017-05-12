@@ -4,7 +4,6 @@ extern crate clap;
 extern crate raft;
 
 use clap::{Arg, App};
-use raft::Server;
 
 fn main() {
   if let Err(ref e) = run() {
@@ -25,10 +24,16 @@ fn main() {
 fn run() -> raft::Result<()> {
   env_logger::init()?;
 
-  let addr = "127.0.0.1:12345".parse()?;
-
-  let mut server = Server::new()?;
-  server.start(&addr)?;
+  let follower = raft::init_state();
+  println!("{:?}", follower);
+  let candidate = raft::election_timeout(follower);
+  println!("{:?}", candidate);
+  let follower = raft::other_leader_elected(candidate);
+  println!("{:?}", follower);
+  let follower = raft::vote(follower, String::from("nick"));
+  println!("{:?}", follower);
+  let follower = raft::complete_vote(follower);
+  println!("{:?}", follower);
 
   Ok(())
 }

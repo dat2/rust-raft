@@ -12,10 +12,8 @@ name = "raftd"
 path = "src/main.rs"
 
 [dependencies]
-serde = "^0.9"
-error-chain = "^0.7"
-futures = "^0.1"
-tokio-core = "^0.1"
+rand = "0.3"
 log = "^0.3"
 env_logger = "^0.4"
+error-chain = "^0.7"
 clap = "^2"
