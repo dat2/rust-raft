@@ -8,6 +8,6 @@ error_chain! {
     Io(::std::io::Error);
     AddrParse(::std::net::AddrParseError);
     Log(::log::SetLoggerError);
+    Bincode(::bincode::Error);
   }
-
 }
