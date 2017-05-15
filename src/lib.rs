@@ -21,7 +21,7 @@ mod errors;
 mod server;
 mod client;
 mod messages;
-// mod leader_state;
+mod state;
 
 pub use errors::Result;
 pub use server::*;

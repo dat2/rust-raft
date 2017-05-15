@@ -8,9 +8,11 @@ use bincode::{serialize, deserialize, Infinite};
 use tokio_proto::pipeline::ServerProto;
 use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_io::codec::Framed;
-use tokio_service::Service;
-use futures::{future, Future, BoxFuture};
+use tokio_service::{NewService, Service};
+use futures::{future, Stream, IntoFuture, Future, BoxFuture};
+use futures::sync::mpsc::{unbounded, UnboundedSender, UnboundedReceiver};
 use tokio_proto::TcpServer;
+use tokio_core::reactor::Handle;
 
 use errors;
 use messages::{RaftRequest, RaftResponse};
@@ -64,9 +66,12 @@ impl<T: AsyncRead + AsyncWrite + 'static> ServerProto<T> for RaftProto {
   }
 }
 
-struct Raft;
+#[derive(Clone)]
+struct RaftService {
+  tx: UnboundedSender<usize>
+}
 
-impl Service for Raft {
+impl Service for RaftService {
   type Request = RaftRequest;
   type Response = RaftResponse;
   type Error = io::Error;
@@ -75,9 +80,40 @@ impl Service for Raft {
   fn call(&self, req: Self::Request) -> Self::Future {
     info!(target: "rust", "[SERVER] request {:?}", req);
     match req {
-      RaftRequest::RequestVote(_term, _candidate) => future::ok(RaftResponse::Vote(_term, true)).boxed(),
+      RaftRequest::RequestVote(_term, _candidate) => {
+        self.tx.send(_term).map_err(|e| io::Error::new(io::ErrorKind::Other, e.description()))
+          .into_future()
+          .and_then(move |_| future::ok(RaftResponse::Vote(_term, true)))
+          .boxed()
+      },
       RaftRequest::Heartbeat => future::ok(RaftResponse::Heartbeat).boxed()
     }
+  }
+}
+
+struct RaftServiceFactory {
+  tx: UnboundedSender<usize>
+}
+
+impl RaftServiceFactory {
+  fn new(handle: &Handle) -> RaftServiceFactory {
+    let (tx, rx) = unbounded();
+    handle.spawn(rx.for_each(|v| {
+      println!("RaftServiceFactory rx: {:?}", v);
+      Ok(())
+    }));
+    RaftServiceFactory { tx: tx }
+  }
+}
+
+impl NewService for RaftServiceFactory {
+  type Request = RaftRequest;
+  type Response = RaftResponse;
+  type Error = io::Error;
+  type Instance = RaftService;
+
+  fn new_service(&self) -> io::Result<Self::Instance> {
+    Ok(RaftService { tx: self.tx.clone() })
   }
 }
 
@@ -85,6 +121,6 @@ pub fn serve(addr: SocketAddr) -> errors::Result<()> {
   let addr_display = addr.to_string();
   let server = TcpServer::new(RaftProto, addr);
   info!(target: "raft", "[SERVER] starting on {:?}", addr_display);
-  server.serve(|| Ok(Raft));
+  server.with_handle(RaftServiceFactory::new);
   Ok(())
 }
