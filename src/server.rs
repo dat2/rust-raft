@@ -11,8 +11,10 @@ use tokio_io::codec::Framed;
 use tokio_service::{NewService, Service};
 use futures::{future, Stream, IntoFuture, Future, BoxFuture};
 use futures::sync::mpsc::{unbounded, UnboundedSender, UnboundedReceiver};
+use futures::sync::oneshot;
 use tokio_proto::TcpServer;
 use tokio_core::reactor::Handle;
+use rand::{self, Rng};
 
 use errors;
 use messages::{RaftRequest, RaftResponse};
@@ -68,7 +70,7 @@ impl<T: AsyncRead + AsyncWrite + 'static> ServerProto<T> for RaftProto {
 
 #[derive(Clone)]
 struct RaftService {
-  tx: UnboundedSender<usize>
+  tx: UnboundedSender<oneshot::Sender<usize>>
 }
 
 impl Service for RaftService {
@@ -81,9 +83,11 @@ impl Service for RaftService {
     info!(target: "rust", "[SERVER] request {:?}", req);
     match req {
       RaftRequest::RequestVote(_term, _candidate) => {
-        self.tx.send(_term).map_err(|e| io::Error::new(io::ErrorKind::Other, e.description()))
+        let (oneshot_tx,oneshot_rx) = oneshot::channel::<usize>();
+        self.tx.send(oneshot_tx).map_err(|e| io::Error::new(io::ErrorKind::Other, e.description()))
           .into_future()
-          .and_then(move |_| future::ok(RaftResponse::Vote(_term, true)))
+          .and_then(|_| oneshot_rx.map_err(|e| io::Error::new(io::ErrorKind::Other, e.description())))
+          .and_then(|result| future::ok(RaftResponse::Vote(result, true)))
           .boxed()
       },
       RaftRequest::Heartbeat => future::ok(RaftResponse::Heartbeat).boxed()
@@ -92,14 +96,15 @@ impl Service for RaftService {
 }
 
 struct RaftServiceFactory {
-  tx: UnboundedSender<usize>
+  tx: UnboundedSender<oneshot::Sender<usize>>
 }
 
 impl RaftServiceFactory {
   fn new(handle: &Handle) -> RaftServiceFactory {
+    let mut rng = rand::thread_rng();
     let (tx, rx) = unbounded();
-    handle.spawn(rx.for_each(|v| {
-      println!("RaftServiceFactory rx: {:?}", v);
+    handle.spawn(rx.for_each(move |v: oneshot::Sender<_>| {
+      v.send(rng.gen());
       Ok(())
     }));
     RaftServiceFactory { tx: tx }
